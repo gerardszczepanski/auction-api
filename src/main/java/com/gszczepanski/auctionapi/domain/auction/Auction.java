@@ -1,25 +1,26 @@
 package com.gszczepanski.auctionapi.domain.auction;
 
+import com.gszczepanski.auctionapi.domain.Id;
+import com.gszczepanski.auctionapi.domain.Money;
+import com.gszczepanski.auctionapi.domain.Time;
+import com.gszczepanski.auctionapi.domain.auction.AuctionSnapshot.BetSnapshot;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.Value;
+
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.Deque;
 import java.util.LinkedList;
 import java.util.Optional;
 
-import com.gszczepanski.auctionapi.domain.Id;
-import com.gszczepanski.auctionapi.domain.Money;
-import com.gszczepanski.auctionapi.domain.Time;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.Value;
-
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
-import static com.gszczepanski.auctionapi.domain.auction.Auction.AuctionStatus.STARTED;
-import static com.gszczepanski.auctionapi.domain.auction.Auction.AuctionStatus.FINISHED_NOT_SOLD;
-import static com.gszczepanski.auctionapi.domain.auction.Auction.AuctionStatus.FINISHED_SOLD;
-import static com.gszczepanski.auctionapi.domain.auction.Auction.AuctionStatus.NOT_STARTED;
+import static com.gszczepanski.auctionapi.domain.auction.Auction.AuctionStatus.*;
+import static com.gszczepanski.auctionapi.domain.auction.Auction.PlaceBetResultStatus.*;
 import static java.util.Objects.nonNull;
+import static java.util.stream.Collectors.toCollection;
+import static java.util.stream.Collectors.toList;
 import static lombok.AccessLevel.NONE;
 import static lombok.AccessLevel.PRIVATE;
 
@@ -30,8 +31,6 @@ public class Auction {
     private final Id id;
 
     private final String code;
-
-    private final Money startPrice;
 
     private final Money minimalPrice;
 
@@ -45,22 +44,6 @@ public class Auction {
     private AuctionStatus status;
 
     private int version;
-
-    static Auction createFrom(CreateAuctionSpecification specification) {
-        checkArgument(nonNull(specification), "specification is null");
-
-        return new Auction(
-                Id.generate(),
-                specification.getCode(),
-                specification.getStartPrice(),
-                specification.getMinimalPrice(),
-                specification.getStartDate(),
-                specification.getEndDate(),
-                new LinkedList<>(),
-                NOT_STARTED,
-                0
-        );
-    }
 
     void startAuction(Time time) {
         checkArgument(nonNull(time), "time is null");
@@ -79,7 +62,7 @@ public class Auction {
         checkState(isEligibleForFinishing(time), "Auction is not eligible for finishing");
 
         status = getLastBet()
-                .map(bet -> calculateFinishStatusBasedOnBet(bet))
+                .map(betFound -> FINISHED_SOLD)
                 .orElse(FINISHED_NOT_SOLD);
     }
 
@@ -88,22 +71,16 @@ public class Auction {
         return status == STARTED && time.now().compareTo(endDate) == 1;
     }
 
-    private AuctionStatus calculateFinishStatusBasedOnBet(Bet bet) {
-        if (bet.getPrice().getAmount().compareTo(minimalPrice.getAmount()) > -1) {
-            return FINISHED_SOLD;
-        }
-        return FINISHED_NOT_SOLD;
-    }
-
     PlaceBetResult placeBet(PlaceBetSpecification specification, Time time) {
         checkArgument(nonNull(specification), "specification is null");
         checkArgument(nonNull(time), "time is null");
+        checkArgument(specification.getAuctionCode().equals(code), "bet specification is not for this auction");
 
         if (status == NOT_STARTED) {
-            return PlaceBetResult.FAILURE_AUCTION_NOT_STARTED;
+            return PlaceBetResult.failureResult(FAILURE_AUCTION_NOT_STARTED, specification);
         }
         if (status == FINISHED_SOLD || status == FINISHED_NOT_SOLD) {
-            return PlaceBetResult.FAILURE_AUCTION_FINISHED;
+            return PlaceBetResult.failureResult(FAILURE_AUCTION_FINISHED, specification);
         }
 
         Optional<Bet> maybeLastBet = getLastBet();
@@ -111,25 +88,44 @@ public class Auction {
             if (isBetCandidatePriceHigherOrEqualMinimalPrice(specification)) {
                 return addNewTopBet(specification, time);
             }
-            return PlaceBetResult.FAILURE_PRICE_LOWER_THAN_MINIMAL_PRICE;
+            return PlaceBetResult.failureResult(FAILURE_PRICE_LOWER_THAN_MINIMAL_PRICE, specification);
         }
 
         Bet lastBet = maybeLastBet.get();
         if (isBetCandidatePriceHigherThanLastBetPrice(specification, lastBet)) {
             return addNewTopBet(specification, time);
         }
-        return PlaceBetResult.FAILURE_PRICE_TOO_LOW;
+        return PlaceBetResult.failureResult(FAILURE_PRICE_TOO_LOW, specification);
     }
 
     Money currentAuctionedPrice() {
         return getLastBet()
-                .map(bet -> bet.getPrice())
-                .orElseGet(() -> Money.from(BigDecimal.ZERO, startPrice.getCurrency()));
+                .map(Bet::getPrice)
+                .orElseGet(() -> Money.from(BigDecimal.ZERO, minimalPrice.getCurrency()));
+    }
+
+    public AuctionSnapshot asSnapshot() {
+        return AuctionSnapshot.builder()
+                .id(id)
+                .code(code)
+                .startDate(startDate)
+                .endDate(endDate)
+                .minimalPrice(minimalPrice)
+                .currentAuctionedPrice(currentAuctionedPrice())
+                .version(version)
+                .status(status)
+                .bets(
+                        bets.stream()
+                                .map(Bet::asSnapshot)
+                                .collect(toList())
+                )
+                .build();
     }
 
     private PlaceBetResult addNewTopBet(PlaceBetSpecification specification, Time time) {
-        bets.add(assembleBetFrom(specification, time));
-        return PlaceBetResult.SUCCESS;
+        final Bet bet = assembleBetFrom(specification, time);
+        bets.add(bet);
+        return PlaceBetResult.successResult(specification, bet.asSnapshot());
     }
 
     private boolean isBetCandidatePriceHigherThanLastBetPrice(PlaceBetSpecification specification, Bet lastBet) {
@@ -149,7 +145,7 @@ public class Auction {
         );
     }
 
-    private Optional<Bet> getLastBet() {
+    Optional<Bet> getLastBet() {
         return bets.isEmpty() ? Optional.empty() : Optional.of(bets.getLast());
     }
 
@@ -158,11 +154,11 @@ public class Auction {
         NOT_STARTED,
         STARTED,
         FINISHED_SOLD,
-        FINISHED_NOT_SOLD;
+        FINISHED_NOT_SOLD
 
     }
 
-    enum PlaceBetResult {
+    enum PlaceBetResultStatus {
         SUCCESS,
         FAILURE_AUCTION_NOT_STARTED,
         FAILURE_AUCTION_FINISHED,
@@ -171,9 +167,33 @@ public class Auction {
     }
 
     @Value
-    class Bet {
+    @AllArgsConstructor(access = PRIVATE)
+    static class PlaceBetResult {
 
-        private final Id betId;
+        private final PlaceBetResultStatus status;
+        private final PlaceBetSpecification specification;
+
+        @Getter(NONE)
+        private final BetSnapshot betSnapshot;
+
+        public Optional<BetSnapshot> getBetSnapshot() {
+            return Optional.ofNullable(betSnapshot);
+        }
+
+        private static PlaceBetResult successResult(PlaceBetSpecification specification, BetSnapshot betSnapshot) {
+            return new PlaceBetResult(SUCCESS, specification, betSnapshot);
+        }
+
+        private static PlaceBetResult failureResult(PlaceBetResultStatus status, PlaceBetSpecification specification) {
+            return new PlaceBetResult(status, specification, null);
+        }
+
+    }
+
+    @Value
+    static class Bet {
+
+        private final Id id;
 
         private final Id userId;
 
@@ -181,6 +201,60 @@ public class Auction {
 
         private final Money price;
 
+        private BetSnapshot asSnapshot() {
+            return BetSnapshot.builder()
+                    .id(id)
+                    .userId(userId)
+                    .price(price)
+                    .creationTime(creationTime)
+                    .build();
+        }
+
+        private static Bet fromSnapshot(BetSnapshot snapshot) {
+            return new Bet(
+                    snapshot.getId(),
+                    snapshot.getUserId(),
+                    snapshot.getCreationTime(),
+                    snapshot.getPrice()
+            );
+        }
+
+    }
+
+    static Auction createFrom(CreateAuctionSpecification specification) {
+        checkArgument(nonNull(specification), "specification is null");
+
+        return new Auction(
+                Id.generate(),
+                specification.getCode(),
+                specification.getMinimalPrice(),
+                specification.getStartDate(),
+                specification.getEndDate(),
+                new LinkedList<>(),
+                NOT_STARTED,
+                0
+        );
+    }
+
+    public static Auction restoreFrom(AuctionSnapshot snapshot) {
+        checkArgument(nonNull(snapshot), "snapshot is null");
+
+        // TODO validate snapshot data
+
+        Deque<Bet> bets = snapshot.getBets().stream()
+                .map(Bet::fromSnapshot)
+                .collect(toCollection(LinkedList::new));
+
+        return new Auction(
+                snapshot.getId(),
+                snapshot.getCode(),
+                snapshot.getMinimalPrice(),
+                snapshot.getStartDate(),
+                snapshot.getEndDate(),
+                bets,
+                snapshot.getStatus(),
+                snapshot.getVersion()
+        );
     }
 
 }

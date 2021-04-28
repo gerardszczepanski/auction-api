@@ -1,11 +1,11 @@
 package com.gszczepanski.auctionapi.domain.auction;
 
-import java.time.Duration;
-import java.time.OffsetDateTime;
-
 import com.gszczepanski.auctionapi.domain.Money;
 import lombok.RequiredArgsConstructor;
 import lombok.Value;
+
+import java.time.Duration;
+import java.time.OffsetDateTime;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Strings.isNullOrEmpty;
@@ -19,8 +19,6 @@ public class CreateAuctionSpecification {
 
     private final String code;
 
-    private final Money startPrice;
-
     private final Money minimalPrice;
 
     private final OffsetDateTime startDate;
@@ -31,8 +29,6 @@ public class CreateAuctionSpecification {
 
         private String code;
 
-        private Money startPrice;
-
         private Money minimalPrice;
 
         private OffsetDateTime startDate;
@@ -42,17 +38,8 @@ public class CreateAuctionSpecification {
         private Builder() {
         }
 
-        public static Builder aCreateAuctionSpecification() {
-            return new Builder();
-        }
-
         public Builder code(String code) {
             this.code = code;
-            return this;
-        }
-
-        public Builder startPrice(Money startPrice) {
-            this.startPrice = startPrice;
             return this;
         }
 
@@ -77,16 +64,12 @@ public class CreateAuctionSpecification {
             validatePrices();
             validateDates();
 
-            return new CreateAuctionSpecification(code, startPrice, minimalPrice, startDate, endDate);
+            return new CreateAuctionSpecification(code, minimalPrice, startDate, endDate);
         }
 
         private void validatePrices() {
-            checkArgument(nonNull(startPrice), "startPrice is null");
             checkArgument(nonNull(minimalPrice), "minimalPrice is null");
-
-            checkArgument(startPrice.getAmount().compareTo(ZERO) != -1, "startPrice can not be negative");
             checkArgument(minimalPrice.getAmount().compareTo(ZERO) != -1, "minimalPrice can not be negative");
-            checkArgument(startPrice.getAmount().compareTo(minimalPrice.getAmount()) != 1, "startPrice can not be greater than minimalPrice");
         }
 
         private void validateDates() {
@@ -98,6 +81,10 @@ public class CreateAuctionSpecification {
             long hours = duration.toHours();
 
             checkArgument(hours >= 24 && hours <= 120, "Auction valid period is from 24 hours to 120 hours");
+        }
+
+        public static Builder aCreateAuctionSpecification() {
+            return new Builder();
         }
     }
 }

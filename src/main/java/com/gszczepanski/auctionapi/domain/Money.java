@@ -30,6 +30,18 @@ public class Money {
         return new Money(amount, currency);
     }
 
+    public Money add(Money money) {
+        checkArgument(nonNull(money), "Money is null");
+        checkArgument(money.getCurrency() == currency, "Currency does not match");
+        return Money.from(amount.add(money.amount), currency);
+    }
+
+    public Money subtract(Money money) {
+        checkArgument(nonNull(money), "Money is null");
+        checkArgument(money.getCurrency() == currency, "Currency does not match");
+        return Money.from(amount.subtract(money.amount), currency);
+    }
+
     public enum Currency {
 
         PLN;

@@ -1,20 +1,19 @@
 package com.gszczepanski.auctionapi.domain.auction;
 
-import java.util.List;
-
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
 import com.gszczepanski.auctionapi.domain.Id;
 import com.gszczepanski.auctionapi.domain.Time;
 import com.gszczepanski.auctionapi.domain.auction.Auction.PlaceBetResult;
 import com.gszczepanski.auctionapi.domain.auction.AuctionRepository.AuctionQuery;
 import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
 
 import static com.google.common.base.Preconditions.checkArgument;
-import static com.gszczepanski.auctionapi.domain.auction.Auction.AuctionStatus.STARTED;
 import static com.gszczepanski.auctionapi.domain.auction.Auction.AuctionStatus.NOT_STARTED;
-import static com.gszczepanski.auctionapi.domain.auction.Auction.PlaceBetResult.SUCCESS;
+import static com.gszczepanski.auctionapi.domain.auction.Auction.AuctionStatus.STARTED;
+import static com.gszczepanski.auctionapi.domain.auction.Auction.PlaceBetResultStatus.SUCCESS;
 import static com.gszczepanski.auctionapi.domain.auction.AuctionRepository.AuctionQuery.queryForCode;
 import static java.lang.String.format;
 import static java.util.Objects.nonNull;
@@ -25,7 +24,7 @@ import static java.util.Objects.nonNull;
 public class Auctions {
 
     private final AuctionRepository auctionRepository;
-
+    private final AuctionEventPublisher auctionEventPublisher;
     private final Time time;
 
     public Id createAuction(CreateAuctionSpecification specification) {
@@ -33,6 +32,7 @@ public class Auctions {
 
         Auction auction = Auction.createFrom(specification);
         auctionRepository.save(auction);
+        auctionEventPublisher.publishAuctionCreated(auction.asSnapshot());
         return auction.getId();
     }
 
@@ -45,6 +45,7 @@ public class Auctions {
                 .forEach(auction -> {
                     auction.startAuction(time);
                     auctionRepository.save(auction);
+                    auctionEventPublisher.publishAuctionStarted(auction.asSnapshot());
                 });
     }
 
@@ -57,6 +58,7 @@ public class Auctions {
                 .forEach(auction -> {
                     auction.finishAuction(time);
                     auctionRepository.save(auction);
+                    auctionEventPublisher.publishAuctionFinished(auction.asSnapshot());
                 });
     }
 
@@ -65,9 +67,10 @@ public class Auctions {
         Auction auction = findAuctionByCode(specification);
 
         PlaceBetResult result = auction.placeBet(specification, time);
-        if (result == SUCCESS) {
+        if (result.getStatus() == SUCCESS) {
             auctionRepository.save(auction);
         }
+        auctionEventPublisher.publishBetOperationPerformed(auction.asSnapshot(), result);
         return result;
     }
 
