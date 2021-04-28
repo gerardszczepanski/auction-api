@@ -13,7 +13,7 @@ trait WithAuctionFixtures {
 
     CreateAuctionSpecification givenCreateAuctionSpecification(String code) {
         return CreateAuctionSpecification.Builder.aCreateAuctionSpecification()
-                .code(code)
+                .code('ASD-FGH')
                 .minimalPrice(Money.from("10.00", PLN))
                 .startDate(givenDateTime(01, 18))
                 .endDate(givenDateTime(02, 18))
@@ -21,8 +21,18 @@ trait WithAuctionFixtures {
     }
 
     Auction givenNotStartedAuction() {
-        return Auction.createFrom(
-                givenCreateAuctionSpecification("ASD-FGH")
+        return Auction.restoreFrom(
+                builder()
+                        .id(Id.from('f42f975d-f3f3-4a02-ab60-f5116da097d2'))
+                        .code('ASD-FGH')
+                        .minimalPrice(Money.from("10.00", PLN))
+                        .startDate(givenDateTime(01, 18))
+                        .endDate(givenDateTime(02, 18))
+                        .bets([])
+                        .version(1)
+                        .status(Auction.AuctionStatus.NOT_STARTED)
+                        .creationTime(givenDateTime(01, 17))
+                        .build()
         )
     }
 
@@ -37,6 +47,7 @@ trait WithAuctionFixtures {
                         .bets([])
                         .version(1)
                         .status(Auction.AuctionStatus.STARTED)
+                        .creationTime(givenDateTime(01, 17))
                         .build()
         )
     }
@@ -56,6 +67,7 @@ trait WithAuctionFixtures {
                         ])
                         .version(1)
                         .status(Auction.AuctionStatus.STARTED)
+                        .creationTime(givenDateTime(01, 17))
                         .build()
         )
     }
@@ -80,6 +92,7 @@ trait WithAuctionFixtures {
                         .bets([])
                         .version(2)
                         .status(Auction.AuctionStatus.FINISHED_NOT_SOLD)
+                        .creationTime(givenDateTime(01, 17))
                         .build()
         )
     }

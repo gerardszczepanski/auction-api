@@ -1,0 +1,17 @@
+server:
+  port: 9000
+
+spring:
+  jpa:
+    show-sql: false
+    properties:
+      hibernate:
+        generate_statistics: false
+        cache:
+          use_second_level_cache: false
+          use_query_cache: false
+  datasource:
+    driver-class-name: org.h2.Driver
+    url: jdbc:h2:mem:test;DATABASE_TO_UPPER=false;DB_CLOSE_ON_EXIT=FALSE;DB_CLOSE_DELAY=-1;MODE=MySQL;INIT=CREATE SCHEMA IF NOT EXISTS public
+  flyway:
+    locations: classpath:db/migration/common, classpath:db/migration/fixtures

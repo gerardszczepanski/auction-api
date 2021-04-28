@@ -1,0 +1,39 @@
+spring:
+  jackson:
+    serialization:
+      write_dates_as_timestamps: false
+      write_bigdecimal_as_plain: true
+  jpa:
+    show-sql: false
+    hibernate:
+      ddl-auto: none
+    properties:
+      javax:
+        persistence:
+          sharedCache:
+            #required - enable selective caching mode - only entities with @Cacheable annotation will use L2 cache.
+            mode: ENABLE_SELECTIVE
+      hibernate:
+        dialect: org.hibernate.dialect.MySQL5Dialect
+        time_zone: UTC
+        #optional - generate statistics to check if L2/query cache is actually being used.
+        generate_statistics: false
+        cache:
+          #required - turn on L2 cache.
+          use_second_level_cache: true
+          #optional - turn on query cache.
+          use_query_cache: true
+          region:
+            #            #required - classpath to cache region factory.
+            factory_class: org.hibernate.cache.jcache.JCacheRegionFactory
+  datasource:
+    driver-class-name: com.mysql.jdbc.Driver
+    hikari:
+      connectionInitSql: SELECT 1
+      minimumIdle: 5
+      maximumPoolSize: 20
+      idleTimeout: 15000
+      maxLifetime: 600000
+      connectionTimeout: 15000
+  flyway:
+    locations: classpath:db/migration/common

@@ -1,5 +1,11 @@
 package com.gszczepanski.auctionapi.domain.auction;
 
+import java.math.BigDecimal;
+import java.time.OffsetDateTime;
+import java.util.Deque;
+import java.util.LinkedList;
+import java.util.Optional;
+
 import com.gszczepanski.auctionapi.domain.Id;
 import com.gszczepanski.auctionapi.domain.Money;
 import com.gszczepanski.auctionapi.domain.Time;
@@ -8,16 +14,17 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.Value;
 
-import java.math.BigDecimal;
-import java.time.OffsetDateTime;
-import java.util.Deque;
-import java.util.LinkedList;
-import java.util.Optional;
-
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
-import static com.gszczepanski.auctionapi.domain.auction.Auction.AuctionStatus.*;
-import static com.gszczepanski.auctionapi.domain.auction.Auction.PlaceBetResultStatus.*;
+import static com.gszczepanski.auctionapi.domain.auction.Auction.AuctionStatus.FINISHED_NOT_SOLD;
+import static com.gszczepanski.auctionapi.domain.auction.Auction.AuctionStatus.FINISHED_SOLD;
+import static com.gszczepanski.auctionapi.domain.auction.Auction.AuctionStatus.NOT_STARTED;
+import static com.gszczepanski.auctionapi.domain.auction.Auction.AuctionStatus.STARTED;
+import static com.gszczepanski.auctionapi.domain.auction.Auction.PlaceBetResultStatus.FAILURE_AUCTION_FINISHED;
+import static com.gszczepanski.auctionapi.domain.auction.Auction.PlaceBetResultStatus.FAILURE_AUCTION_NOT_STARTED;
+import static com.gszczepanski.auctionapi.domain.auction.Auction.PlaceBetResultStatus.FAILURE_PRICE_LOWER_THAN_MINIMAL_PRICE;
+import static com.gszczepanski.auctionapi.domain.auction.Auction.PlaceBetResultStatus.FAILURE_PRICE_TOO_LOW;
+import static com.gszczepanski.auctionapi.domain.auction.Auction.PlaceBetResultStatus.SUCCESS;
 import static java.util.Objects.nonNull;
 import static java.util.stream.Collectors.toCollection;
 import static java.util.stream.Collectors.toList;
@@ -41,9 +48,50 @@ public class Auction {
     @Getter(NONE)
     private final Deque<Bet> bets;
 
+    private final OffsetDateTime creationTime;
+
+    private final int version;
+
     private AuctionStatus status;
 
-    private int version;
+    static Auction createFrom(CreateAuctionSpecification specification, Time time) {
+        checkArgument(nonNull(specification), "specification is null");
+        checkArgument(nonNull(time), "time is null");
+
+        return new Auction(
+                Id.generate(),
+                specification.getCode(),
+                specification.getMinimalPrice(),
+                specification.getStartDate(),
+                specification.getEndDate(),
+                new LinkedList<>(),
+                time.now(),
+                0,
+                NOT_STARTED
+        );
+    }
+
+    static Auction restoreFrom(AuctionSnapshot snapshot) {
+        checkArgument(nonNull(snapshot), "snapshot is null");
+
+        // TODO validate snapshot data
+
+        Deque<Bet> bets = snapshot.getBets().stream()
+                .map(Bet::fromSnapshot)
+                .collect(toCollection(LinkedList::new));
+
+        return new Auction(
+                snapshot.getId(),
+                snapshot.getCode(),
+                snapshot.getMinimalPrice(),
+                snapshot.getStartDate(),
+                snapshot.getEndDate(),
+                bets,
+                snapshot.getCreationTime(),
+                snapshot.getVersion(),
+                snapshot.getStatus()
+        );
+    }
 
     void startAuction(Time time) {
         checkArgument(nonNull(time), "time is null");
@@ -149,7 +197,7 @@ public class Auction {
         return bets.isEmpty() ? Optional.empty() : Optional.of(bets.getLast());
     }
 
-    enum AuctionStatus {
+    public enum AuctionStatus {
 
         NOT_STARTED,
         STARTED,
@@ -168,17 +216,14 @@ public class Auction {
 
     @Value
     @AllArgsConstructor(access = PRIVATE)
-    static class PlaceBetResult {
+    public static class PlaceBetResult {
 
         private final PlaceBetResultStatus status;
+
         private final PlaceBetSpecification specification;
 
         @Getter(NONE)
         private final BetSnapshot betSnapshot;
-
-        public Optional<BetSnapshot> getBetSnapshot() {
-            return Optional.ofNullable(betSnapshot);
-        }
 
         private static PlaceBetResult successResult(PlaceBetSpecification specification, BetSnapshot betSnapshot) {
             return new PlaceBetResult(SUCCESS, specification, betSnapshot);
@@ -186,6 +231,10 @@ public class Auction {
 
         private static PlaceBetResult failureResult(PlaceBetResultStatus status, PlaceBetSpecification specification) {
             return new PlaceBetResult(status, specification, null);
+        }
+
+        public Optional<BetSnapshot> getBetSnapshot() {
+            return Optional.ofNullable(betSnapshot);
         }
 
     }
@@ -201,15 +250,6 @@ public class Auction {
 
         private final Money price;
 
-        private BetSnapshot asSnapshot() {
-            return BetSnapshot.builder()
-                    .id(id)
-                    .userId(userId)
-                    .price(price)
-                    .creationTime(creationTime)
-                    .build();
-        }
-
         private static Bet fromSnapshot(BetSnapshot snapshot) {
             return new Bet(
                     snapshot.getId(),
@@ -219,42 +259,15 @@ public class Auction {
             );
         }
 
-    }
+        private BetSnapshot asSnapshot() {
+            return BetSnapshot.builder()
+                    .id(id)
+                    .userId(userId)
+                    .price(price)
+                    .creationTime(creationTime)
+                    .build();
+        }
 
-    static Auction createFrom(CreateAuctionSpecification specification) {
-        checkArgument(nonNull(specification), "specification is null");
-
-        return new Auction(
-                Id.generate(),
-                specification.getCode(),
-                specification.getMinimalPrice(),
-                specification.getStartDate(),
-                specification.getEndDate(),
-                new LinkedList<>(),
-                NOT_STARTED,
-                0
-        );
-    }
-
-    public static Auction restoreFrom(AuctionSnapshot snapshot) {
-        checkArgument(nonNull(snapshot), "snapshot is null");
-
-        // TODO validate snapshot data
-
-        Deque<Bet> bets = snapshot.getBets().stream()
-                .map(Bet::fromSnapshot)
-                .collect(toCollection(LinkedList::new));
-
-        return new Auction(
-                snapshot.getId(),
-                snapshot.getCode(),
-                snapshot.getMinimalPrice(),
-                snapshot.getStartDate(),
-                snapshot.getEndDate(),
-                bets,
-                snapshot.getStatus(),
-                snapshot.getVersion()
-        );
     }
 
 }

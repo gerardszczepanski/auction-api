@@ -31,9 +31,11 @@ public class AuctionSnapshot {
 
     private final int version;
 
+    private final OffsetDateTime creationTime;
+
     @Value
     @Builder
-    static class BetSnapshot {
+    public static class BetSnapshot {
 
         private final Id id;
 
